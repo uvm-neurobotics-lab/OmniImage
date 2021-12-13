@@ -1,33 +1,12 @@
-import os
 from random import shuffle
-from torch.utils.data import Subset
-import mimetypes
-from torch.utils.data import Dataset
-from torchvision.io import read_image
-from pathlib import Path
+
 import numpy as np
-import pathlib
 import torch
+from torch.utils.data import Dataset, Subset
+from torchvision.io import read_image
 from tqdm import trange
 
-
-def get_images(path):
-    def _get_files(p, fs, extensions=None):
-        res = [
-            p / f
-            for f in fs
-            if not f.startswith(".")
-            and ((not extensions) or f'.{f.split(".")[-1].lower()}' in extensions)
-        ]
-        return res
-
-    extensions = set(
-        k for k, v in mimetypes.types_map.items() if v.startswith("image/")
-    )
-    res = []
-    for p, d, f in os.walk(path):
-        res += _get_files(Path(p), f, extensions)
-    return res
+from utils.image import get_images
 
 
 class OmniImageDataset(Dataset):

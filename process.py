@@ -1,7 +1,4 @@
-import mimetypes
-import os
 import pickle
-from hashlib import blake2b
 from pathlib import Path
 
 import cv2
@@ -11,106 +8,12 @@ from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import vgg19_bn
 from tqdm import tqdm
 
-from evolve import select_best, show_evolution, Params
+from cosines import feats2distances
+from evolve import Params, select_best
 from hooker import hook_it_up
-from cosines import compute_distances_cuda
-from utils import downsize, feats2distances
-
-
-def model2name(net):
-    return f"{net.__module__.split}_{weights2hash(net)}"
-
-
-def par2bytes(p):
-    return p.detach().cpu().numpy().tobytes()
-
-
-def weights2hash(model, dsize=8):
-    # compute hash of a torch.nn.Module weights or a list of tensors
-    import torch
-
-    h = blake2b(digest_size=dsize)
-    # state = {name:par2bytes(p) for name, p in net.named_parameters()}
-    # names = sorted(state.keys()) # sort names for reproducibility
-    # for name in names:
-    #   b = state[name]
-    #   h.update(b)
-    if issubclass(model.__class__, torch.nn.Module):
-        model = model.parameters()
-    for p in model:
-        h.update(par2bytes(p))
-    return h.hexdigest()
-
-
-def get_files(path, extensions=None, recurse=False, include=False):
-    path = Path(path)
-    res = []
-    if recurse:
-        for p, d, f in os.walk(path):
-            if include:
-                d[:] = [o for o in d]
-            else:
-                d[:] = [o for o in d if not o.startswith(".")]
-            res += _get_files(p, f, extensions)
-        return res
-    else:
-        f = [o.name for o in os.scandir(path) if o.is_file()]
-        return _get_files(path, f, extensions)
-
-
-def _get_files(p, fs, extensions=None):
-    p = Path(p)
-    res = [
-        p / f
-        for f in fs
-        if not f.startswith(".")
-        and ((not extensions) or f'.{f.split(".")[-1].lower()}' in extensions)
-    ]
-    return res
-
-
-image_extensions = set(
-    k for k, v in mimetypes.types_map.items() if v.startswith("image/")
-)
-
-
-def load(im):
-    return cv2.cvtColor(
-        cv2.imread(im.as_posix()),
-        cv2.COLOR_BGR2RGB,
-    )
-
-
-def load_resize(im, size=64):
-    # ugly AF but fast
-    # NOTE: cv2 reads images as BGR so need to convert
-    return cv2.cvtColor(
-        cv2.resize(
-            cv2.imread(im.as_posix()),
-            (size, size),
-            interpolation=cv2.INTER_AREA,
-        ),
-        cv2.COLOR_BGR2RGB,
-    )
-
-
-def paths2tensors(paths, size=None):
-    # ugly AF but 3 times faster than Image.open
-    # toten = torchvision.transforms.ToTensor()
-    # pil = torch.stack([toten(Image.open(im)) for im in tqdm(paths)])
-    # NOTE: need to transpose chan. dim. to front
-    if size is None:
-        tens = torch.stack(
-            [torch.from_numpy(load(im).transpose(2, 0, 1)) / 255 for im in paths]
-        )
-    else:
-        tens = torch.stack(
-            [
-                torch.from_numpy(load_resize(im, size=size).transpose(2, 0, 1)) / 255
-                for im in paths
-            ]
-        )
-    return tens
+from utils.image import downsize, paths2tensors, read_folder
+from utils.viz import show_evolution
+from utils.torch import model2name
 
 
 def extract_features(net, paths, layer=None, device="cuda", bsize=512):
@@ -133,11 +36,9 @@ def store_activations(net, name, classes, to_hook=None):
     folder.mkdir(parents=True, exist_ok=True)
     for cls in tqdm(classes):
         fname = folder / (cls.name + ".npy")
-        if not fname.exist():
-            ims = [im for im in sorted(cls.iterdir())]
+        if not fname.exists():
+            ims = read_folder(cls)
             feats = extract_features(net, ims, layer=to_hook, device="cuda")
-            with open(folder / f"{cls.name}_names.pkl", "wb") as f:
-                pickle.dump(ims, f)
             np.save(fname, feats)
 
 
@@ -201,7 +102,6 @@ def generate(im_path, imagenet_dir, folder="OmniImage64"):
     raw_im = cv2.imread(src)
     small_im = downsize(raw_im, size=64)
     cv2.imwrite(dest, small_im)
-    # print(src, dest, small_im.shape)
 
 
 #%%
@@ -214,8 +114,8 @@ if __name__ == "__main__":
     net = vgg19_bn(pretrained=True, progress=True)
     to_hook = net.classifier[3]
     name = model2name(net)  # torchvision.models.vgg_ce631fc9ca0278a2
-    classes = [folder for folder in sorted(Path(imagenet_dir).iterdir())]
-    # store_activations(net, name, classes, to_hook)
+    classes = read_folder(imagenet_dir)
+    store_activations(net, name, classes, to_hook)
 
     # params = Params(N=500, M=20, k=100, muts=5, its=1_000)
     # for cls in tqdm(classes):

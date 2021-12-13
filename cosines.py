@@ -1,5 +1,4 @@
 import math
-from time import time
 import numpy as np
 from numba import cuda, njit, prange
 
@@ -79,6 +78,15 @@ def compute_distances_cuda(features):
 
     cosine_kernel[blockspergrid, threadsperblock](d_features, d_distances)
     distances = d_distances.copy_to_host()
+    return distances
+
+
+def feats2distances(npy):
+    feats = np.load(npy)
+    distances = compute_distances_cuda(feats)
+    # images_list = npy.parent / (npy.stem + "_names.pkl")
+    # images_paths = pickle.load(images_list.open("rb"))
+    # images_paths = read_folder(npy.stem)
     return distances
 
 
