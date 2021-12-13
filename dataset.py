@@ -99,6 +99,10 @@ class OMLSampler:
         self.samples = np.arange(len(dataset))
         self.class_idxs = self.samples.reshape(-1, nsamples_per_class)
         self.classes = np.arange(self.class_idxs.shape[0])
+        self.balanced = np.copy(self.class_idxs).T
+        self.rng = np.random.default_rng()
+        self.rng.permuted(self.balanced, axis=0, out=self.balanced)
+        self.slice = 0
 
     def __repr__(self):
         return f"Sampler: {len(self.dataset)} SAMPLES, {len(self.classes)} CLASSES"
@@ -123,14 +127,30 @@ class OMLSampler:
         outer_labels = torch.cat([inner_labels, outer_labels])
         return inner_ims, inner_labels, outer_ims, outer_labels
 
+    def sample_balanced(self):
+        # generate a batch with exactly 1 example from every class
+        idxs = self.balanced[self.slice]
+        samples = self.get(idxs)
+        if self.slice >= len(self.balanced) - 1:
+            self.slice = 0
+            self.rng.permuted(self.balanced, axis=0, out=self.balanced)
+            # NOTE: this will change idxs, use them before shuffling
+        else:
+            self.slice += 1
+        return samples
+
+
 #%%
 
 if __name__ == "__main__":
 
-    dataset = OmniMiniDataset("OmniMini64")
+    dataset = OmniImageDataset("OmniImage64")
 
     train, test, tr_cls, te_cls = split(dataset, verbose=True)
     print(len(train), len(test))
 
     sampler = OMLSampler(train)
     print(sampler)
+
+    ims, labels = sampler.sample_balanced()
+    assert len(set([label.item() for label in labels])) == len(labels)
