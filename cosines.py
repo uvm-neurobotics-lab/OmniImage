@@ -1,10 +1,11 @@
 import math
+import unittest
+from itertools import combinations
+from random import choice
+
 import numpy as np
 from numba import cuda, njit, prange
-
-
-def flatten(l):
-    return [i for seq in l for i in seq]
+from scipy.spatial.distance import cosine
 
 
 def cosine_distance(u: np.ndarray, v: np.ndarray):
@@ -47,7 +48,7 @@ def compute_distances_parallel(features):
 
 # set fastmath for the sqrt in the device function
 @cuda.jit(fastmath=True)
-def cosine_kernel(features, distances):
+def self_cosine_kernel(features, distances):
     """
     Compute one entry of the distances matrix
     features  : (N,K) features matrix
@@ -60,37 +61,135 @@ def cosine_kernel(features, distances):
         distances[j, i] = sim
 
 
-def compute_distances_cuda(features):
+def self_cosine_distances_cuda(features):
     """
     Compute pairwise cosine distances with cuda acceleration.
     features  : (N,K) features matrix
     distances : (N,N) distances matrix
     """
     features = features.astype(np.float32)
-    distances = np.zeros((features.shape[0], features.shape[0]), dtype=np.float32)
-    d_features = cuda.to_device(features)
-    d_distances = cuda.to_device(distances)
+    N = features.shape[0]
+    distances = np.zeros((N, N), dtype=np.float32)
+    features_cuda = cuda.to_device(features)
+    distances_cuda = cuda.to_device(distances)
 
     threadsperblock = (16, 16)
-    blockspergrid_x = math.ceil(features.shape[0] / threadsperblock[0])
-    blockspergrid_y = math.ceil(features.shape[0] / threadsperblock[1])
+    blockspergrid_x = math.ceil(N / threadsperblock[0])
+    blockspergrid_y = math.ceil(N / threadsperblock[1])
     blockspergrid = (blockspergrid_x, blockspergrid_y)
 
-    cosine_kernel[blockspergrid, threadsperblock](d_features, d_distances)
-    distances = d_distances.copy_to_host()
+    self_cosine_kernel[blockspergrid, threadsperblock](features_cuda, distances_cuda)
+    distances = distances_cuda.copy_to_host()
     return distances
 
 
 def feats2distances(npy):
     feats = np.load(npy)
-    distances = compute_distances_cuda(feats)
+    distances = cosine_distances_cuda(feats)
     # images_list = npy.parent / (npy.stem + "_names.pkl")
     # images_paths = pickle.load(images_list.open("rb"))
     # images_paths = read_folder(npy.stem)
     return distances
 
 
+def cosine_distances_cuda(v1, v2=None):
+    """
+    Compute pairwise cosine distances with cuda acceleration.
+    v1        : (N,K) features matrix
+    v2        : (M,K) features matrix
+    distances : (N,M) distances matrix
+    """
+    if v2 is None:
+        return self_cosine_distances_cuda(v1)
+    v1 = v1.astype(np.float32)
+    v2 = v2.astype(np.float32)
+    distances = np.zeros((v1.shape[0], v2.shape[0]), dtype=np.float32)
+    v1_cuda = cuda.to_device(v1)
+    v2_cuda = cuda.to_device(v2)
+    distances_cuda = cuda.to_device(distances)
+
+    threadsperblock = (16, 16)
+    blockspergrid_x = math.ceil(v1.shape[0] / threadsperblock[0])
+    blockspergrid_y = math.ceil(v2.shape[0] / threadsperblock[1])
+    blockspergrid = (blockspergrid_x, blockspergrid_y)
+
+    cosine_kernel2[blockspergrid, threadsperblock](v1_cuda, v2_cuda, distances_cuda)
+    distances = distances_cuda.copy_to_host()
+    return distances
+
+
+# set fastmath for the sqrt in the device function
+@cuda.jit(fastmath=True)
+def cosine_kernel2(v1, v2, distances):
+    """
+    Compute one entry of the distances matrix
+    v1        : (N,K) features matrix
+    v2        : (M,K) features matrix
+    distances : (N,M) distances matrix
+    """
+    i, j = cuda.grid(2)
+    if i < v1.shape[0] and j < v2.shape[0]:
+        sim = cosine_cuda(v1[i], v2[j])
+        distances[i, j] = sim
+
+
 #%%
 
+
+def scipy_cosine(v1, v2):
+    N, M = v1.shape[0], v2.shape[0]
+    ret = np.zeros((N, M))
+    for i in range(N):
+        for j in range(M):
+            ret[i, j] = cosine(v1[i], v2[j])
+    return ret
+
+
+def comparer(ds, atol):
+    return [np.allclose(a, b, atol=atol) for a, b in combinations(ds, 2)]
+
+
+class TestCosines(unittest.TestCase):
+    atol = 1e-6
+
+    def test_rect(self):
+
+        for _ in range(100):
+            N = choice(range(2, 7))
+            M = choice(range(2, 7))
+            K = choice(range(3, 10))
+
+            v1 = np.random.random((N, K))
+            v2 = np.random.random((M, K))
+
+            d1 = scipy_cosine(v1, v2)
+            d2 = cosine_distances_cuda(v1, v2)
+
+            comparison = np.allclose(d1, d2, atol=self.atol)
+            # print(N, M, K, comparison)
+            # print(np.abs(d1 - d2).mean())
+            self.assertTrue(comparison)
+
+    def test_square(self):
+
+        for _ in range(100):
+            N = choice(range(2, 7))
+            K = choice(range(2, 100))
+
+            v1 = np.random.random((N, K))
+
+            ds = [
+                scipy_cosine(v1, v1),
+                cosine_distances_cuda(v1),
+                cosine_distances_cuda(v1, v1),
+                self_cosine_distances_cuda(v1),
+            ]
+
+            comparisons = comparer(ds, atol=self.atol)
+            # print(np.mean([np.abs(a - b).mean() for a, b in combinations(ds, 2)]))
+            # print(N, K, comparisons)
+            self.assertTrue(all(comparisons))
+
+
 if __name__ == "__main__":
-    pass
+    unittest.main()
