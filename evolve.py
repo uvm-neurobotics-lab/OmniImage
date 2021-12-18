@@ -12,19 +12,39 @@ from utils.image import class2paths
 
 @njit
 def subset(matrix, cols):
-    """Optimized version of np.ix_ for symmetric mat with zero diag:
-    N,P = 10,5
-    m = np.random.rand(N, N)
-    np.fill_diagonal(m,0)
-    a = np.sort(np.random.choice(np.arange(N), size=P, replace=False))
-    sub = m[np.ix_(a, a)]
-    uptri = np.triu_indices(len(sub), k=1)
-    assert np.allclose(sub[uptri],subset(m, a))
     """
-    N = cols.shape[0]
-    res = np.empty((N * (N - 1)) // 2, dtype=matrix.dtype)
+    Optimized version of np.ix_ for symmetric mat with zero diag
+    
+    N,C = 5,3 # N size of matrix, C columns selected
+    m = np.random.rand(N, N)
+    m = (m + m.T)/2 # symmetric
+    np.fill_diagonal(m,0)
+    select = np.sort(np.random.choice(np.arange(N), size=C, replace=False))
+    sub = m[np.ix_(select, select)]
+    triu = np.triu_indices(len(sub), k=1)
+    assert np.allclose(sub[triu], subset(m, select))
+    
+    e.g. N = 5, C = 3
+    m:
+          | 0  a  b  c  d |
+          | a  0  e  f  g |
+          | b  e  0  h  i |
+          | c  f  h  0  j |
+          | d  g  i  j  0 |
+            
+    select: [1,3,4]
+    
+    sub:
+          | 0  f  g |
+          | f  0  j |
+          | g  j  0 |
+            
+    sub[triu]: [f, g, j] # len = 3*(3-1)//2
+    """
+    C = cols.shape[0]
+    res = np.empty((C * (C - 1)) // 2, dtype=matrix.dtype)
     k = 0
-    for i in range(N):
+    for i in range(C):
         for j in cols[i + 1 :]:
             res[k] = matrix[cols[i], j]
             k += 1
