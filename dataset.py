@@ -37,6 +37,7 @@ class OmniImageDataset(Dataset):
 
 
 def split(dataset, p=0.8, samples=20, verbose=False):
+    # randomly split the dataset between train/test
     # e.g. samples=3, nclasses=100, p=0.8
     # labels is a list of ints #[0,0,0,1,1,1,2,2,...,100]
     if verbose:
@@ -85,21 +86,25 @@ class OMLSampler:
 
     def __repr__(self):
         return f"Sampler: {len(self.dataset)} SAMPLES, {len(self.classes)} CLASSES"
-
-    def sample_class(self):
-        cls = np.random.choice(self.classes)
-        return self.get(self.class_idxs[cls])
-
+    
     def get(self, idxs):
+        # get batch of ims,labels from a list of indices
         ims = [self.dataset[i][0] for i in idxs]
         lbs = [self.dataset[i][1] for i in idxs]
         return torch.stack(ims), torch.tensor(lbs)
 
+    def sample_class(self):
+        # get all 20 ims of a single class, used for inner loop
+        cls = np.random.choice(self.classes)
+        return self.get(self.class_idxs[cls])
+
     def sample_random(self, sample_size=64):
+        # get a random sample from the whole dataset, used for the outer loop
         samples = np.random.choice(self.samples, size=sample_size, replace=False)
         return self.get(samples)
 
     def sample(self, sample_size=64):
+        # get 20 ims for the inner and 20+64 ims for the outer
         inner_ims, inner_labels = self.sample_class()
         outer_ims, outer_labels = self.sample_random(sample_size)
         outer_ims = torch.cat([inner_ims, outer_ims])
@@ -107,7 +112,7 @@ class OMLSampler:
         return inner_ims, inner_labels, outer_ims, outer_labels
 
     def sample_balanced(self):
-        # generate a batch with exactly 1 example from every class
+        # get a sample with exactly 1 example from every class
         idxs = self.balanced[self.slice]
         samples = self.get(idxs)
         if self.slice >= len(self.balanced) - 1:
@@ -130,6 +135,8 @@ if __name__ == "__main__":
 
     sampler = OMLSampler(train)
     print(sampler)
+    
+    # OMLSampler(dataset) to use the whole dataset instead
 
     ims, labels = sampler.sample_balanced()
     assert len(set([label.item() for label in labels])) == len(labels)
