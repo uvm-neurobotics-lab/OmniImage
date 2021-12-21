@@ -90,7 +90,7 @@ def process_class_feats(npy, params, version, debug=False):
             pickle.dump(stats, f)
 
 
-def generate(im_path, imagenet_dir, folder="OmniImage64"):
+def generate(im_path, imagenet_dir, folder="OmniImage64", im_size=64):
     # read im_path from original imagenet, resize and move to new folder
     cls, file = im_path.parts[-2:]
     new_path = Path(folder) / cls / file
@@ -100,7 +100,7 @@ def generate(im_path, imagenet_dir, folder="OmniImage64"):
     dest = str(new_path.resolve())
 
     raw_im = cv2.imread(src)
-    small_im = downsize(raw_im, size=64)
+    small_im = downsize(raw_im, size=im_size)
     cv2.imwrite(dest, small_im)
 
 
@@ -116,13 +116,6 @@ if __name__ == "__main__":
     name = model2name(net)  # torchvision.models.vgg_ce631fc9ca0278a2
     classes = read_folder(imagenet_dir)
     store_activations(net, name, classes, to_hook)
-
-    # params = Params(N=500, M=20, k=100, muts=5, its=1_000)
-    # for cls in tqdm(classes):
-    #     try:
-    #         process_class(cls, params, debug=False)
-    #     except:
-    #         print(f"Failed {cls}")
 
     npys = [
         npy for npy in Path("torchvision.models.vgg_ce631fc9ca0278a2").glob("*.npy")
@@ -141,3 +134,5 @@ if __name__ == "__main__":
 
     for im_path in tqdm(datav3):
         generate(im_path, "imagenet_dir")
+        # generate(im_path, "imagenet_dir", "OmniImage28", 28)
+        # generate(im_path, "imagenet_dir", "OmniImage32", 32)
