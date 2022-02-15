@@ -1,4 +1,4 @@
-from random import shuffle
+import random
 
 import numpy as np
 import torch
@@ -36,19 +36,21 @@ class OmniImageDataset(Dataset):
         return image, label
 
 
-def split(dataset, p=0.8, samples=20, verbose=False):
+def split(dataset, p=0.8, samples=20, verbose=False, seed=None):
     # randomly split the dataset between train/test
     # e.g. samples=3, nclasses=100, p=0.8
     # labels is a list of ints #[0,0,0,1,1,1,2,2,...,100]
     if verbose:
         print("Preparing splits...")
-        labels = [dataset[i][1] for i in trange(len(dataset))]
+        range_fun = trange
     else:
-        labels = [dataset[i][1] for i in range(len(dataset))]
+        range_fun = range
+    rng = random.Random(seed)
+    labels = [dataset[i][1] for i in range_fun(len(dataset))]
     assert is_sorted(labels)
     classes = list(set(labels))  # [0,1,2,...,100]
     ntrain = int(len(classes) * p)  # 100*0.8 = 80
-    shuffle(classes)
+    rng.shuffle(classes)
     train_classes = sorted(classes[:ntrain])  # [0,3,4,...,93] : 80
     test_classes = sorted(classes[ntrain:])  # [1,2,5,...,100] : 20
     train_idxs = [
@@ -138,7 +140,7 @@ if __name__ == "__main__":
 
     dataset = OmniImageDataset("OmniImage64")
 
-    train, test, tr_cls, te_cls = split(dataset, verbose=True)
+    train, test, tr_cls, te_cls = split(dataset, verbose=True, seed=4)
     print(len(train), len(test))
 
     device = "cuda"
