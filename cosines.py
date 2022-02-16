@@ -1,10 +1,11 @@
 import math
 import unittest
 from itertools import combinations
+from pathlib import Path
 from random import choice
 
 import numpy as np
-from numba import cuda, njit, prange
+from numba import cuda, f4, njit, prange
 from scipy.spatial.distance import cosine
 
 
@@ -83,12 +84,9 @@ def self_cosine_distances_cuda(features):
     return distances
 
 
-def feats2distances(npy):
+def feats2distances(npy: Path) -> f4[:]:
     feats = np.load(npy)
     distances = cosine_distances_cuda(feats)
-    # images_list = npy.parent / (npy.stem + "_names.pkl")
-    # images_paths = pickle.load(images_list.open("rb"))
-    # images_paths = read_folder(npy.stem)
     return distances
 
 

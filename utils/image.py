@@ -2,53 +2,19 @@ import mimetypes
 import os
 from multiprocessing import Pool
 from pathlib import Path
+from typing import List
 
 import cv2
 import torch
+from numba import i8, u8
 from PIL import Image
 from tqdm import tqdm
 
 
-def file2paths(file="OmniImage.txt"):
-    with open(file, "r") as f:
-        paths = f.read().splitlines()
-        paths = [Path(p) for p in paths]
-    return paths
-
-
-def class2paths(cls, file="OmniImage.txt"):
-    paths = file2paths(file)
-    return sorted([path for path in paths if path.parent.name is cls])
-
-
-def read_folder(folder):
+def read_folder(folder: Path) -> List[Path]:
     if type(folder) is str:
         folder = Path(folder)
     return sorted(folder.iterdir())
-
-
-def path2np(im, size=64):
-    return cv2.cvtColor(
-        cv2.resize(
-            cv2.imread(im.as_posix()),
-            (size, size),
-            interpolation=cv2.INTER_AREA,
-        ),
-        cv2.COLOR_BGR2RGB,
-    )
-
-
-def get_size(path):
-    try:
-        size = Image.open(path).size
-        return size
-    except:
-        print("Failed", path)
-        path.unlink()
-
-
-def downsize(im, size=64):
-    return cv2.resize(im, (size, size), interpolation=cv2.INTER_AREA)
 
 
 def is_rgb(path):
@@ -71,17 +37,17 @@ def get_images(path):
     res = []
     for p, d, f in os.walk(path):
         res += _get_files(Path(p), f, extensions)
-    return res
+    return sorted(res)
 
 
-def load(im):
+def load(im: Path) -> u8[:, :, :]:
     return cv2.cvtColor(
         cv2.imread(im.as_posix()),
         cv2.COLOR_BGR2RGB,
     )
 
 
-def load_resize(im, size=64):
+def load_resize(im: Path, size=64) -> u8[:, :]:
     # ugly AF but fast
     # NOTE: cv2 reads images as BGR so need to convert
     return cv2.cvtColor(
@@ -94,7 +60,7 @@ def load_resize(im, size=64):
     )
 
 
-def paths2tensors(paths, size=None):
+def paths2tensors(paths: List[Path], size: i8 = 64):
     # ugly AF but 3 times faster than Image.open
     # toten = torchvision.transforms.ToTensor()
     # pil = torch.stack([toten(Image.open(im)) for im in tqdm(paths)])
@@ -117,22 +83,3 @@ def parallel_imap_unord(fn, els, chunksize=100, procs=12):
     with Pool(procs) as p:
         for _ in tqdm(p.imap_unordered(fn, els, chunksize=chunksize), total=len(els)):
             pass
-
-
-def parallel_imap(fn, els, chunksize=100, procs=12):
-    with Pool(procs) as p:
-        return list(tqdm(p.imap(fn, els, chunksize=chunksize), total=len(els)))
-
-
-# start = time()
-# valid = get_files("./valid", extensions=image_extensions, recurse=True)
-# end = time()
-# print(f"Files {len(valid)} Elapsed: {end-start:.2f}s")
-# print(set([f.suffix for f in valid]))
-# start = time()
-# train = get_files("./train", extensions=image_extensions, recurse=True)
-# end = time()
-# print(f"Files {len(train)} Elapsed: {end-start:.2f}s")
-# print(set([f.suffix for f in train]))
-# parallel_imap_unord(resize64, valid)
-# parallel_imap_unord(resize64, train)

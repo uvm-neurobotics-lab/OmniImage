@@ -2,13 +2,12 @@ import pickle
 from pathlib import Path
 from random import shuffle
 
-import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from torchvision.utils import make_grid
 
-from .image import path2np, paths2tensors, read_folder
+from .image import paths2tensors, read_folder
 
 
 def get_best_fits(stats="statsV3"):
@@ -66,7 +65,7 @@ def show_evolution(cls, distances, stats, save=False):
     """
     vmin, vmax = distances.min(), distances.max()
     fits = stats["fits"]
-    top_dogs = stats["top_dogs"]
+    bests = stats["bests"]
     n = len(fits)
     maxfit = max(fits)
     improvements = improvements_only(fits)
@@ -85,14 +84,14 @@ def show_evolution(cls, distances, stats, save=False):
             bbox_to_anchor=(i, f, 1, 1),
             loc="lower left",
         )
-        sol = distances[np.ix_(top_dogs[i], top_dogs[i])]
+        sol = distances[np.ix_(bests[i], bests[i])]
         axin.imshow(sol, vmin=vmin, vmax=vmax, interpolation=None, cmap=cmap)
         # Create a Rectangle patch
-        rect = patches.Rectangle(
-            (-0.5, -0.5), 20, 20, linewidth=0.5, edgecolor="white", facecolor="none"
-        )
+        # rect = patches.Rectangle(
+        #     (-0.5, -0.5), 20, 20, linewidth=0.5, edgecolor="white", facecolor="none"
+        # )
         # Add the patch to the Axes
-        axin.add_patch(rect)
+        # axin.add_patch(rect)
         axin.set_axis_off()
     ax.set_xlabel("Generation", fontsize=16)
     ax.set_ylabel("Min. Distance", fontsize=16)
@@ -104,8 +103,9 @@ def show_evolution(cls, distances, stats, save=False):
         height="60%",
         loc="upper right",
     )
-    paths = get_imagenet_class_paths(cls, selected=top_dogs[-1])
-    final = paths2grid(paths)
+    paths = get_imagenet_class_paths(cls, selected=bests[-1])
+    nrows = int(np.sqrt(len(paths)))
+    final = paths2grid(paths[: nrows ** 2], nrows=nrows)
     axin.imshow(final)
     axin.set_xlabel("Best", fontsize=16)
     axin.set_xticks([])
@@ -117,7 +117,7 @@ def show_evolution(cls, distances, stats, save=False):
         loc="upper right",
     )
     paths = get_imagenet_class_paths(cls)
-    random = paths2grid(paths)
+    random = paths2grid(paths, nrows=4)
     axin.imshow(random)
     axin.set_xlabel("Random", fontsize=16)
     axin.set_xticks([])
@@ -156,7 +156,7 @@ def trans(l):
     return list(zip(*l))
 
 
-def get_imagenet_class_paths(cls, selected=None, imagenet_dir="imagenet_dir"):
+def get_imagenet_class_paths(cls, selected=None, imagenet_dir="imagenet"):
     ims_paths = read_folder(Path(imagenet_dir) / cls)
     if selected is None:
         shuffle(ims_paths)
@@ -166,7 +166,7 @@ def get_imagenet_class_paths(cls, selected=None, imagenet_dir="imagenet_dir"):
     return ims_paths
 
 
-def paths2grid(ims_paths):
+def paths2grid(ims_paths, nrows):
     tens = paths2tensors(ims_paths, size=64)
-    grid = make_grid(tens, nrow=4)
+    grid = make_grid(tens, nrow=nrows)
     return grid.numpy().transpose(1, 2, 0)

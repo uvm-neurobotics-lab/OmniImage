@@ -1,13 +1,13 @@
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-from numba import njit, prange
+from numba import f4, i8, njit, prange
 from numpy.random import choice
-from tqdm import trange
+from tqdm import trange, tqdm
 
 from cosines import feats2distances
-from utils.image import class2paths
+from utils.image import read_folder
 
 
 @njit
@@ -69,10 +69,8 @@ def cross(dad, mom):
     return child
 
 
-def score(pop, distances, inverse):
+def score(pop, distances):
     fitnesses = np.array([subset(distances, m).sum() for m in pop])
-    if inverse:
-        return -fitnesses
     return fitnesses
 
 
@@ -105,13 +103,22 @@ def step(pop, fitnesses, P, S, K, M, O, space):
     return pop
 
 
-def select_best(distances, P, S, K, M, O, its, inverse=False, progress=False):
-    # distances : [N,L] N vectors of length L
-    # P : population size
-    # S : subset size
-    # K : number of parents (P-K children)
-    # M : number of mutations
-    # O : fraction of crossovers e.g. O=2 -> 1/2, O=10 -> 1/10, (bigger=faster)
+# distances : [N,L] N vectors of length L
+# P : population size
+# S : subset size
+# K : number of parents (P-K children)
+# M : number of mutations
+# O : fraction of crossovers e.g. O=2 -> 1/2, O=10 -> 1/10, (bigger=faster)
+def select_best(
+    distances: f4[:, :],
+    P: i8,
+    S: i8,
+    K: i8,
+    M: i8,
+    O: i8,
+    its: i8,
+    progress: bool = False,
+):
     N = distances.shape[0]
     assert S <= N, f"Error: value of S={S} is > than the #distances={N}"
     assert O >= 1, f"Error: value of O={S} is < 1"
@@ -125,29 +132,66 @@ def select_best(distances, P, S, K, M, O, its, inverse=False, progress=False):
 
         pop = step(pop, fitnesses, P, S, K, M, O, space)
 
-        fitnesses = score(pop, distances, inverse)
+        fitnesses = score(pop, distances)
 
         best = np.copy(pop[np.argmin(fitnesses)])
         stats["bests"].append(best)
         stats["fits"].append(fitnesses.min())
 
-    fitnesses = score(pop, distances, inverse)
+    fitnesses = score(pop, distances)
     best = np.copy(pop[np.argmin(fitnesses)])
 
     return best, stats
+
+
+classes = [cls.name for cls in read_folder("imagenet64")]
+classes
+
+
+def process_class_feats(
+    im_folder: str = "imagenet64",
+    fts_folder: str = "torchvision.models.vgg_ce631fc9ca0278a2",
+    P=1000,
+    S=20,
+    K=100,
+    M=2,
+    O=2,
+    its=2_000,
+    debug=False,
+):
+
+    classes = [cls.name for cls in read_folder(im_folder)]
+    split_file = f"./OmniImage_{S}.txt"
+
+    for cls in tqdm(classes):
+        ims = read_folder(f"{im_folder}/{cls}")
+        npy = Path(f"{fts_folder}/{cls}.npy")
+        distances = feats2distances(npy)
+        best, stats = select_best(
+            distances, P=P, S=S, K=K, M=M, O=O, its=its, progress=debug
+        )
+
+        best_ims = np.array(ims)[best]
+
+        with open(split_file, "a") as f:
+            for im in best_ims:
+                path = Path(cls) / im.name
+                if debug:
+                    print(path.as_posix())
+                else:
+                    f.write(path.as_posix() + "\n")
 
 
 #%%
 
 if __name__ == "__main__":
 
-    from utils.viz import genotype_over_time, improvements_only, show_evolution
+    from utils.viz import genotype_over_time, show_evolution
 
     # cls = "n03047690" # shoe?
     cls = "n11939491"  # daisy
     npy = Path(f"torchvision.models.vgg_ce631fc9ca0278a2/{cls}.npy")
     distances = feats2distances(npy)
-    ims = class2paths(cls)
 
     # N = 1000  # population size
     # M = 20  # dna size
@@ -157,19 +201,12 @@ if __name__ == "__main__":
     )
     print("Final fit:", stats["fits"][-1])
 
-    # show_evolution(cls, distances, stats)
+    show_evolution(cls, distances, stats)
 
-    # REPEAT EVOLUTION AFTER REMOVING THE TOP DOGS
-    # refined = np.array(
-    #     list(set(np.arange(len(distances))) - set(stats["bests"][-1]))
-    # )
-    # distances2 = distances[np.ix_(refined, refined)]
-    # best2, stats2 = select_best(distances2, params, progress=True)
-    # show_evolution(distances2, stats2)
-    # candidates = np.array(stats["bests"])
-    # genotype_over_time(candidates)
-    # # steps at which fitness change
-    # improvements = improvements_only(stats["fits"])
-    # t = np.array([i[0] for i in improvements])
-    # candidates = np.array(stats["bests"])[t]
-    # genotype_over_time(candidates)
+    genotype_over_time(np.array(stats["bests"][:100]))
+
+    #%%
+
+    process_class_feats(
+        "imagenet64", "torchvision.models.vgg_ce631fc9ca0278a2", S=100, debug=True
+    )
