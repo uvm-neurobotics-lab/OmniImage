@@ -1,3 +1,10 @@
-OmniImage64/
-imagenet_dir
+OmniImage64_20/
+OmniImage64_20.md5
+OmniImage64_20.zip
+OmniImage64_100/
+OmniImage64_100.md5
+OmniImage64_100.zip
+imagenet
+imagenet64
+data/*
 torchvision.models.vgg_ce631fc9ca0278a2
